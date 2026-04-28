@@ -56,8 +56,13 @@ class VideoInterfaceNode(Node):
             return
 
         # Convert raw buffer to numpy array [height, width, channels]
-        frame = np.frombuffer(mapinfo.data, np.uint8).reshape(height, width, 3)
+        #frame = np.frombuffer(mapinfo.data, np.uint8).reshape(height, width, 3)
+        cap = cv2.VideoCapture(0)
+        ret, frame = cap.read()
+        if not ret:
+            break
         buf.unmap(mapinfo)
+
 
         # Display the raw input frame for debugging
         cv2.imshow('Input Stream', cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
@@ -78,7 +83,7 @@ class VideoInterfaceNode(Node):
         self.position_pub.publish(msg)
         # To adjust robot behavior, apply a scaling factor to 'z' (e.g., couple with depth estimation)
         # Log at debug level if needed:
-        # self.get_logger().debug(f'Published position: ({msg.x}, {msg.y}, {msg.z})')
+        self.get_logger().debug(f'Published position: ({msg.x}, {msg.y}, {msg.z})')
 
     def destroy_node(self):
         # Cleanup GStreamer resources on shutdown
