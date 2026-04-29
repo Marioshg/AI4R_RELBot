@@ -6,6 +6,10 @@ import gi
 import numpy as np
 import cv2
 
+import ultralytics
+from ultralytics import YOLO
+ultralytics.checks()
+
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
 
@@ -68,7 +72,25 @@ class VideoInterfaceNode(Node):
         cv2.imshow('Input Stream', cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
         cv2.waitKey(1)
 
+        model = YOLO('best.pt')
+        result = model(frame, conf=0.5, classes=[0])
+
+        annotated = result[0].plot()
+
+        cv2.imshow('YOLO', cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR))
+        msg = Point()
+
+        msg.x = 200.0  # object center x-coordinate
+
+        
+
+        if (len(result[0].boxes.xyxy)):
+            print(result[0].boxes[0])
+            msg.x = (result[0].boxes[0].xyxy[0].tolist()[0] + result[0].boxes[0].xyxy[0].tolist()[2])/2
+
+        # cv2.imshow('yolo Stream', cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
         # TODO: Insert detection/tracking logic here to compute object position
+
 
         # TODO: Insert detection/tracking logic here to compute object position
         # For demonstration, here we are publishing a dummy Point at origin
@@ -76,8 +98,6 @@ class VideoInterfaceNode(Node):
         # x = horizontal center coordinate of the object
         # y = unused (flat-ground assumption)
         # z = object area (controller caps at 10000 to stop robot when object is too large)
-        msg = Point()
-        msg.x = 200.0  # object center x-coordinate
         msg.y = 0.0  # y-coordinate unused
         msg.z = 10001.0  # object area; >10000 indicates 'too close'
         self.position_pub.publish(msg)
