@@ -1,0 +1,4 @@
+hardhat_training/Hardhat_YOLO/
+hardhat_training/runs
+*.pt
+.vscode/

@@ -1,0 +1,10 @@
+path: /home/spennock/AIfAR/hardhat_training/Hardhat_YOLO
+train: images/train
+val: images/val
+
+# Classes
+names:
+  0: helmet
+  1: head
+  2: person
+  3: others
