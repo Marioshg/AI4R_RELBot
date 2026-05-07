@@ -21,7 +21,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'video_interface = relbot_video_interface.video_interface_node:main'
+            'video_interface = relbot_video_interface.video_interface_node:main',
         ],
     },
 )
