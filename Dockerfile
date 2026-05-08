@@ -48,3 +48,6 @@ RUN echo 'source /opt/ros/jazzy/setup.bash' >> /root/.bashrc && \
 
 # Default to Bash
 CMD ["/bin/bash"]
+
+# Copy best.pt into root directory
+COPY best.pt /best.pt

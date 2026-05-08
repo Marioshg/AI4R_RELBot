@@ -34,27 +34,19 @@ class VideoInterfaceNode(Node):
             'udpsrc port=5000 caps="application/x-rtp,media=video,'
             'encoding-name=H264,payload=96" ! '
             'rtph264depay ! avdec_h264 ! videoconvert ! '
-            'video/x-raw,format=RGB ! appsink name=sink'
+            'appsink drop=true max-buffers=1'
         ))
         pipeline_str = self.get_parameter('gst_pipeline').value
 
-        # Initialize GStreamer and build pipeline
-        Gst.init(None)
-        self.pipeline = Gst.parse_launch(pipeline_str)
-        self.sink = self.pipeline.get_by_name('sink')
-        # Drop late frames to ensure real-time processing
-        self.sink.set_property('drop', True)
-        self.sink.set_property('max-buffers', 1)
-        self.pipeline.set_state(Gst.State.PLAYING)
-
         # Load YOLO model
-        self.model = YOLO('../best.pt')
+        self.model = YOLO("yolo26n.pt")
         self.get_logger().info('YOLO model loaded')
 
         # Open webcam
-        self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.VideoCapture(pipeline_str, cv2.CAP_GSTREAMER)
         if not self.cap.isOpened():
-            self.get_logger().error('Failed to open webcam at index 0')
+            self.get_logger().error('Failed to open GStreamer pipeline, falling back to index 0')
+            self.cap = cv2.VideoCapture(0)
 
         # Load camera calibration for distance estimation
         self.focal_length_px = self._load_calibration()
@@ -105,44 +97,33 @@ class VideoInterfaceNode(Node):
 
     def on_timer(self):
         # Pull the latest frame from the GStreamer appsink
-        sample = self.sink.emit('pull-sample')
-        if not sample:
+        ret, frame = self.cap.read()
+        if not ret:
             # No new frame available
             return
 
-        buf = sample.get_buffer()
-        caps = sample.get_caps()
-        width = caps.get_structure(0).get_value('width')
-        height = caps.get_structure(0).get_value('height')
-        ok, mapinfo = buf.map(Gst.MapFlags.READ)
-        if not ok:
-            # Failed to map buffer data
-            return
-
-        # Convert raw buffer to numpy array [height, width, channels]
-        #frame = np.frombuffer(mapinfo.data, np.uint8).reshape(height, width, 3)
-        ret, frame = self.cap.read()
-        if not ret:
-            buf.unmap(mapinfo)
-            return
-        buf.unmap(mapinfo)
-
         # Display the raw input frame for debugging
-        cv2.imshow('Input Stream', cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+        cv2.imshow('Input Stream', frame)
         cv2.waitKey(1)
 
         result = self.model(frame, conf=0.5, classes=[0], verbose=False)
         annotated = result[0].plot()
         cv2.imshow('YOLO', cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR))
         msg = Point()
-        msg.x = 200.0  # object center x-coordinate
+        msg.x = 160.0  # object center x-coordinate (scaled middle)
 
-        if len(result[0].boxes.xyxy):
-            # Get bounding box of first detected person
-            bbox = result[0].boxes[0].xyxy[0].tolist()  # [x1, y1, x2, y2]
+        boxes = result[0].boxes
+        if len(boxes.xyxy):
+            # Find the box with the highest confidence
+            highest_conf_idx = int(boxes.conf.argmax().item())
+            bbox = boxes[highest_conf_idx].xyxy[0].tolist()  # [x1, y1, x2, y2]
 
-            # Compute horizontal center of the person
-            msg.x = (bbox[0] + bbox[2]) / 2
+            # Compute horizontal center of the person in raw pixels
+            center_x_raw = (bbox[0] + bbox[2]) / 2
+            
+            # Scale x from original frame width to 320
+            frame_width = frame.shape[1]
+            msg.x = center_x_raw * (320.0 / frame_width)
 
             # Estimate distance using pinhole camera model
             distance_cm = self._estimate_distance_cm(bbox)
@@ -154,7 +135,7 @@ class VideoInterfaceNode(Node):
                 f'\n{"="*50}\n'
                 f'PERSON DETECTED\n'
                 f'    Distance: {distance_cm/100:.2f} meters ({distance_cm:.0f} cm)\n'
-                f'    Center X: {msg.x:.1f} px\n'
+                f'    Center X: {msg.x:.1f} px (scaled from {center_x_raw:.1f} px)\n'
                 f'    Command (z): {msg.z:.1f}\n'
                 f'{"="*50}\n'
             )
@@ -168,7 +149,8 @@ class VideoInterfaceNode(Node):
 
     def destroy_node(self):
         # Cleanup GStreamer resources on shutdown
-        self.pipeline.set_state(Gst.State.NULL)
+        if hasattr(self, 'pipeline'):
+            self.pipeline.set_state(Gst.State.NULL)
         if self.cap.isOpened():
             self.cap.release()
         super().destroy_node()

@@ -25,6 +25,9 @@ import signal
 import datetime
 import numpy as np
 import cv2
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst
 
 
 # Chessboard configuration — must match the printed pattern
@@ -60,15 +63,16 @@ def calibrate_camera(camera_index=0, output_path='calibration.json'):
     img_points = []  # 2D points in image plane
     capture_count = 0
 
-    print(f"Opening camera at /dev/video{camera_index}...")
-    cap = cv2.VideoCapture(camera_index, cv2.CAP_V4L2)
-    if not cap.isOpened():
-        print(f"ERROR: Could not open camera at index {camera_index}")
-        return False
+    pipeline_str = 'udpsrc port=5000 caps="application/x-rtp,media=video,encoding-name=H264,payload=96" ! rtph264depay ! avdec_h264 ! videoconvert ! video/x-raw,format=RGB ! appsink name=sink'
 
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    # Initialize GStreamer and build pipeline
+    Gst.init(None)
+    pipeline = Gst.parse_launch(pipeline_str)
+    sink = pipeline.get_by_name('sink')
+    # Drop late frames to ensure real-time processing
+    sink.set_property('drop', True)
+    sink.set_property('max-buffers', 1)
+    pipeline.set_state(Gst.State.PLAYING)
 
     print("=" * 60)
     print("  Camera Calibration — Chessboard Detection")
@@ -84,6 +88,7 @@ def calibrate_camera(camera_index=0, output_path='calibration.json'):
     print("=" * 60)
 
     cv2.namedWindow('Camera Calibration', cv2.WINDOW_AUTOSIZE)
+    cap = cv2.VideoCapture(0)
 
     while True:
         ret, frame = cap.read()
