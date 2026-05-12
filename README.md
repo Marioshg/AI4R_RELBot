@@ -327,3 +327,14 @@ For seamless development, you can use VS Code's Remote extensions to work direct
          ForwardX11 yes
          User pi
      ```
+
+# when using native ubuntu change this:
+
+```python
+self.declare_parameter('gst_pipeline', (
+   'udpsrc port=5000 caps="application/x-rtp,media=video,'
+   'encoding-name=H264,payload=96" ! '
+   'rtph264depay ! avdec_h264 ! videoconvert ! '
+   'appsink drop=true max-buffers=1'
+))
+```
