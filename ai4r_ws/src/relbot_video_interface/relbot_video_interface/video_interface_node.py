@@ -52,6 +52,11 @@ class VideoInterfaceNode(Node):
         # Load camera calibration for distance estimation
         self.focal_length_px = self._load_calibration()
 
+        # Tracking variables
+        self.target_id = -1
+        self.frames_lost = 0
+        self.max_lost_frames = 90
+
         # Timer: fires at ~30Hz to pull frames and publish positions
         # The period (1/30) sets how often on_timer() is called
         self.timer = self.create_timer(1.0 / 30.0, self.on_timer)
@@ -107,43 +112,63 @@ class VideoInterfaceNode(Node):
         cv2.imshow('Input Stream', frame)
         cv2.waitKey(1)
 
-        result = self.model(frame, conf=0.5, classes=[0], verbose=False)
+        result = self.model.track(frame, conf=0.5, classes=[0], persist=True, tracker="botsort.yaml", verbose=False)
         annotated = result[0].plot()
         cv2.imshow('YOLO', cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR))
         msg = Point()
         msg.x = 160.0  # object center x-coordinate (scaled middle)
 
         boxes = result[0].boxes
-        if len(boxes.xyxy):
-            # Find the box with the highest confidence
-            highest_conf_idx = int(boxes.conf.argmax().item())
-            bbox = boxes[highest_conf_idx].xyxy[0].tolist()  # [x1, y1, x2, y2]
+        target_found = False
 
-            # Compute horizontal center of the person in raw pixels
-            center_x_raw = (bbox[0] + bbox[2]) / 2
+        if boxes.id is not None:
+            ids = boxes.id.tolist()
+            xyxys = boxes.xyxy.tolist()
+
+            # If no target assigned yet, latch onto the first detected person
+            if self.target_id == -1 and len(ids) > 0:
+                self.target_id = ids[0]
+                self.get_logger().info(f"Latched onto new target ID: {self.target_id}")
+
+            # Find our target person
+            for bbox, track_id in zip(xyxys, ids):
+                if track_id == self.target_id:
+                    target_found = True
+                    self.frames_lost = 0
+
+                    # Compute horizontal center of the person in raw pixels
+                    center_x_raw = (bbox[0] + bbox[2]) / 2
+                    
+                    # Scale x from original frame width to 320
+                    frame_width = frame.shape[1]
+                    msg.x = center_x_raw * (320.0 / frame_width)
+
+                    # Estimate distance using pinhole camera model
+                    distance_cm = self._estimate_distance_cm(bbox)
+
+                    # Map distance to controller z-value
+                    msg.z = self._distance_to_z(distance_cm)
+
+                    self.get_logger().info(
+                        f'\n{"="*50}\n'
+                        f'TRACKING ID: {self.target_id}\n'
+                        f'    Distance: {distance_cm/100:.2f} meters ({distance_cm:.0f} cm)\n'
+                        f'    Center X: {msg.x:.1f} px (scaled from {center_x_raw:.1f} px)\n'
+                        f'    Command (z): {msg.z:.1f}\n'
+                        f'{"="*50}\n'
+                    )
+                    break
+
+        if not target_found:
+            self.frames_lost += 1
+            msg.z = 10001.0  # safety stop
             
-            # Scale x from original frame width to 320
-            frame_width = frame.shape[1]
-            msg.x = center_x_raw * (320.0 / frame_width)
-
-            # Estimate distance using pinhole camera model
-            distance_cm = self._estimate_distance_cm(bbox)
-
-            # Map distance to controller z-value
-            msg.z = self._distance_to_z(distance_cm)
-
-            self.get_logger().info(
-                f'\n{"="*50}\n'
-                f'PERSON DETECTED\n'
-                f'    Distance: {distance_cm/100:.2f} meters ({distance_cm:.0f} cm)\n'
-                f'    Center X: {msg.x:.1f} px (scaled from {center_x_raw:.1f} px)\n'
-                f'    Command (z): {msg.z:.1f}\n'
-                f'{"="*50}\n'
-            )
-        else:
-            # No person detected — stop the robot
-            msg.z = 10001.0
-            self.get_logger().debug('No person detected, robot stopped')
+            if self.frames_lost > self.max_lost_frames:
+                if self.target_id != -1:
+                    self.get_logger().info(f"Lost target ID {self.target_id}. Resetting.")
+                self.target_id = -1
+            else:
+                self.get_logger().debug('Target not seen in frame, stopping robot')
 
         self.position_pub.publish(msg)
         self.get_logger().debug(f'Published position: ({msg.x}, {msg.y}, {msg.z})')

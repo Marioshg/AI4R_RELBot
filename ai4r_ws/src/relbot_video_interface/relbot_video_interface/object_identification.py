@@ -11,19 +11,19 @@ Main behavior:
 - Assigns a persistent ID to each detected person while they remain in view.
 - Selects one "target person" (first detected person by default).
 - Continuously follows and outputs the position (x-center) of the target person.
-- Resets the target if the person is lost for more than 30 frames.
+- Resets the target if the person is lost for more than 90 frames.
 
 Dependencies:
 - ultralytics (YOLO + tracking)
 - OpenCV (video capture and display)
 """
 class Tracker:
-    def __init__(self, max_frames=30):
+    def __init__(self, max_frames=90):
         self.target_id = -1
         self.frame_count = 0
         self.max_frames = max_frames
 
-    def update(self, results, max_frames=30):
+    def update(self, results, max_frames=90):
         x = 200.0  # default x-coordinate if no target is found
         found = False
 
