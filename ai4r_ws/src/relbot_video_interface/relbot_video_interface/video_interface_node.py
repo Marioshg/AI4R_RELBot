@@ -31,11 +31,10 @@ class VideoInterfaceNode(Node):
 
         # Declare GStreamer pipeline as a parameter for flexibility
         self.declare_parameter('gst_pipeline', (
-            'udpsrc address=0.0.0.0 port=5000 caps="application/x-rtp,media=video,'
+            'udpsrc port=5000 caps="application/x-rtp,media=video,'
             'encoding-name=H264,payload=96" ! '
-            'rtph264depay ! h264parse ! avdec_h264 ! '
-            'videoconvert ! video/x-raw, format=BGR ! '
-            'appsink drop=true max-buffers=1 sync=false'
+            'rtph264depay ! avdec_h264 ! videoconvert ! '
+            'appsink drop=true max-buffers=1'
         ))
         pipeline_str = self.get_parameter('gst_pipeline').value
 
