@@ -32,9 +32,9 @@ class VideoInterfaceNode(Node):
         # Declare GStreamer pipeline as a parameter for flexibility
         self.declare_parameter('gst_pipeline', (
             'udpsrc port=5000 caps="application/x-rtp,media=video,'
-            'encoding-name=H264,payload=96" ! '
-            'rtph264depay ! decodebin ! videoconvert ! video/x-raw,format=BGR ! '
-            'appsink drop=true max-buffers=1'
+            'encoding-name=JPEG,payload=26" ! '
+            'rtpjpegdepay ! jpegdec ! videoconvert ! video/x-raw,format=BGR ! '
+            'appsink drop=true max-buffers=1 sync=false'
         ))
         pipeline_str = self.get_parameter('gst_pipeline').value
 
@@ -111,11 +111,12 @@ class VideoInterfaceNode(Node):
 
         # Display the raw input frame for debugging
         cv2.imshow('Input Stream', frame)
-        cv2.waitKey(1)
 
         result = self.model.track(frame, conf=0.5, classes=[0], persist=True, tracker="botsort.yaml", verbose=False)
         annotated = result[0].plot()
         cv2.imshow('YOLO', cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR))
+        cv2.waitKey(1)
+        
         msg = Point()
         msg.x = 160.0  # object center x-coordinate (scaled middle)
 
