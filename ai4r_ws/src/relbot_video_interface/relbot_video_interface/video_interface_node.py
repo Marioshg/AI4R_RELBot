@@ -17,8 +17,8 @@ from gi.repository import Gst
 
 # ── Distance estimation constants ──────────────────────────────────
 ASSUMED_HEIGHT_CM = 175.0    # Assumed person height in cm
-STOP_DISTANCE_CM = 500.0     # 5 m — safety stop threshold
-TARGET_DISTANCE_CM = 1000.0   # 10 m — desired following distance
+STOP_DISTANCE_CM = 200.0     # 5 m — safety stop threshold
+TARGET_DISTANCE_CM = 350.0   # 10 m — desired following distance
 DEFAULT_FOCAL_LENGTH_PX = 400.0  # Fallback if no calibration file found
 
 
@@ -33,7 +33,7 @@ class VideoInterfaceNode(Node):
         self.declare_parameter('gst_pipeline', (
             'udpsrc port=5000 caps="application/x-rtp,media=video,'
             'encoding-name=H264,payload=96" ! '
-            'rtph264depay ! avdec_h264 ! videoconvert ! '
+            'rtph264depay ! decodebin ! videoconvert ! video/x-raw,format=BGR ! '
             'appsink drop=true max-buffers=1'
         ))
         pipeline_str = self.get_parameter('gst_pipeline').value
@@ -43,10 +43,12 @@ class VideoInterfaceNode(Node):
         self.get_logger().info('YOLO model loaded')
 
         # Open webcam
+        self.get_logger().info(f'Opening GStreamer pipeline: {pipeline_str}')
         self.cap = cv2.VideoCapture(pipeline_str, cv2.CAP_GSTREAMER)
         if not self.cap.isOpened():
-            self.get_logger().error('Failed to open GStreamer pipeline, falling back to index 0')
-            self.cap = cv2.VideoCapture(0)
+            self.get_logger().error('Failed to open GStreamer pipeline!')
+        else:
+            self.get_logger().info('GStreamer pipeline opened successfully')
 
         # Load camera calibration for distance estimation
         self.focal_length_px = self._load_calibration()
@@ -104,7 +106,7 @@ class VideoInterfaceNode(Node):
         # Pull the latest frame from the GStreamer appsink
         ret, frame = self.cap.read()
         if not ret:
-            # No new frame available
+            self.get_logger().warn('No new frame available or failed to read from stream', throttle_duration_sec=2.0)
             return
 
         # Display the raw input frame for debugging
